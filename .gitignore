@@ -1,0 +1,10 @@
+*.pydevproject
+bin/**
+tmp/**
+tmp/**/*
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+
