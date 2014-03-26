@@ -1,102 +1,76 @@
 package com.assignment2.takeandsavephoto;
 
-import java.io.File;
-import java.io.FileOutputStream;
-
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.hardware.Camera;
-import android.hardware.Camera.PictureCallback;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.Surface;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.Arrays;
+import java.util.List;
+import android.content.DialogInterface;
+import android.graphics.ImageFormat;
+import android.hardware.Camera;
+import android.hardware.Camera.CameraInfo;
+import android.hardware.Camera.Size;
+import android.os.AsyncTask;
+import android.os.Environment;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.View;
-import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.Toast;
 
 public class TakeAndSavePhoto extends Activity {
-	private Button btnTakePhoto;
-	private SurfaceView photoView;
-	private Bitmap bmp;
-	private static final String FILE_PATH = Environment
-			.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-			.getPath();
-	private static String FILE_NAME = "/k.jpg";
-	private Camera camera;
+	private SurfaceView preview = null;
+	private SurfaceHolder previewHolder = null;
+	private Camera camera = null;
+	private boolean inPreview = false;
+	private boolean cameraConfigured = false;
+	byte[] photoData;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.a_take_and_save_photo);
-		btnTakePhoto = (Button) findViewById(R.id.button1);
-		photoView = (SurfaceView) findViewById(R.id.surfaceView1);
+		preview = (SurfaceView) findViewById(R.id.surfaceView1);
+		previewHolder = preview.getHolder();
+		previewHolder.addCallback(surfaceCallback);
+		previewHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
 
-		btnTakePhoto.setOnClickListener(new Button.OnClickListener() {
-			public void onClick(View v) {
-				onClickPicture(photoView);
-			}
-		});
-
-		SurfaceHolder holder = photoView.getHolder();
-		holder.addCallback(new SurfaceHolder.Callback() {
-			@Override
-			public void surfaceCreated(SurfaceHolder holder) {
-				try {
-					camera.setPreviewDisplay(holder);
-					camera.startPreview();
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-
-			@Override
-			public void surfaceChanged(SurfaceHolder holder, int format,
-					int width, int height) {
-			}
-
-			@Override
-			public void surfaceDestroyed(SurfaceHolder holder) {
-			}
-		});
 	}
 
 	@Override
-	protected void onResume() {
+	public void onResume() {
 		super.onResume();
-		camera = Camera.open();
+		if (camera == null) {
+			camera = Camera.open();
+		}
+		inPreview = true;
+		startPreview();
+	}
+	private void startPreview() {
+		if (cameraConfigured && camera != null) {
+			camera.startPreview();
+			inPreview = true;
+		}
 	}
 
 	@Override
-	protected void onPause() {
+	public void onPause() {
 		super.onPause();
-
-	}
-
-	public void onClickPicture(View view) {
-
-		camera.takePicture(null, null, new PictureCallback() {
-			@Override
-			public void onPictureTaken(byte[] data, Camera camera) {
-				try {
-					bmp = BitmapFactory.decodeByteArray(data, 0, data.length);
-				} catch (Exception e) {
-					Toast.makeText(getApplicationContext(), e.toString(),
-							Toast.LENGTH_LONG).show();
-				}
-			}
-		});
+		if (inPreview) {
+			camera.stopPreview();
+		}
+		camera.release();
+		camera = null;
+		inPreview = false;		
 	}
 
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
+		// Inflate the menu; this adds items to the action bar if it is present.
 		getMenuInflater().inflate(R.menu.take_and_save_photo, menu);
 		return true;
 	}
@@ -104,9 +78,13 @@ public class TakeAndSavePhoto extends Activity {
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item) {
 
-		int id = item.getItemId();
-		if (id == R.id.save_file) {
-
+		if (item.getItemId() == R.id.item_take_photo) {
+			if (inPreview) {
+				camera.takePicture(null, null, photoCallback);
+				inPreview = false;
+			}
+		}
+		if (item.getItemId() == R.id.item_save_photo) {
 			AlertDialog.Builder alert = new AlertDialog.Builder(this);
 
 			alert.setTitle("Enter the file name");
@@ -125,18 +103,17 @@ public class TakeAndSavePhoto extends Activity {
 					new DialogInterface.OnClickListener() {
 						public void onClick(DialogInterface dialog,
 								int whichButton) {
-							FILE_NAME = "/" + input.getText().toString()
-									+ ".jpg";
 
-							File fileMusic = new File(FILE_PATH + FILE_NAME);
+							File fileMusic = new File(Environment
+									.getExternalStoragePublicDirectory(
+											Environment.DIRECTORY_PICTURES)
+									.getPath()
+									+ "/" + input.getText().toString() + ".jpg");
 							FileOutputStream outputMusicFileStream;
 							try {
 								outputMusicFileStream = new FileOutputStream(
 										fileMusic, fileMusic.createNewFile());
-
-								bmp.compress(Bitmap.CompressFormat.JPEG, 75,
-										outputMusicFileStream);
-
+								outputMusicFileStream.write(photoData);
 								outputMusicFileStream.flush();
 								outputMusicFileStream.close();
 							} catch (Exception e) {
@@ -146,8 +123,171 @@ public class TakeAndSavePhoto extends Activity {
 					});
 			alert.show();
 			return true;
+
 		}
 		return super.onOptionsItemSelected(item);
 	}
 
+	private Camera.Size getBestPreviewSize(int width, int height,
+			Camera.Parameters parameters) {
+		Camera.Size result = null;
+
+		for (Camera.Size size : parameters.getSupportedPreviewSizes()) {
+			if (size.width <= width && size.height <= height) {
+				if (result == null) {
+					result = size;
+				} else {
+					int resultArea = result.width * result.height;
+					int newArea = size.width * size.height;
+
+					if (newArea > resultArea) {
+						result = size;
+					}
+				}
+			}
+		}
+
+		return (result);
+	}
+
+
+
+	private void initPreview(int width, int height) {
+		if (camera != null && previewHolder.getSurface() != null) {
+			try {
+				camera.setPreviewDisplay(previewHolder);
+			} catch (Throwable t) {
+							Toast.makeText(TakeAndSavePhoto.this, t.getMessage(),
+						Toast.LENGTH_LONG).show();
+			}
+
+			if (!cameraConfigured) {
+				Camera.Parameters parameters = camera.getParameters();
+				Camera.Size size = getBestPreviewSize(width, height, parameters);
+				
+				if (size != null) {
+					parameters.setPreviewSize(size.width, size.height);
+					
+					parameters.setPictureFormat(ImageFormat.JPEG);
+					camera.setParameters(parameters);
+					cameraConfigured = true;
+				}
+			}
+		}
+	}
+
+
+	SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
+		public void surfaceCreated(SurfaceHolder holder) {
+			// wait until surfaceChanged()
+		}
+
+		private Size getOptimalPreviewSize(List<Size> sizes, int w, int h) {
+			final double B_SIZE = 2;//1.2
+			double targetRatio = (double) w / h;
+			if (sizes == null)
+				return null;
+
+			Size optimalSize = null;
+			double minDiff = Double.MAX_VALUE;
+
+			int targetHeight = h;
+
+			// Try to find an size match aspect ratio and size
+			for (Size size : sizes) {
+				double ratio = (double) size.width / size.height;
+				if (Math.abs(ratio - targetRatio) > B_SIZE)
+					continue;
+				if (Math.abs(size.height - targetHeight) < minDiff) {
+					optimalSize = size;
+					minDiff = Math.abs(size.height - targetHeight);
+				}
+			}
+
+			// Cannot find the one match the aspect ratio, ignore the
+			// requirement
+			if (optimalSize == null) {
+				minDiff = Double.MAX_VALUE;
+				for (Size size : sizes) {
+					if (Math.abs(size.height - targetHeight) < minDiff) {
+						optimalSize = size;
+						minDiff = Math.abs(size.height - targetHeight);
+					}
+				}
+			}
+			return optimalSize;
+		}
+
+		void setCameraDisplayOrientation() {
+			// get degree of Rotation
+			int rotation = getWindowManager().getDefaultDisplay().getRotation();
+			int degrees = 0;
+			switch (rotation) {
+			case Surface.ROTATION_0:
+				degrees = 0;
+				break;
+			case Surface.ROTATION_90:
+				degrees = 90;
+				break;
+			case Surface.ROTATION_180:
+				degrees = 180;
+				break;
+			case Surface.ROTATION_270:
+				degrees = 270;
+				break;
+			}
+			int result = 0;
+			// get camera info cameraId
+			CameraInfo info = new CameraInfo();
+			Camera.getCameraInfo(0, info); // 0 is back camera
+			result = ((360 - degrees) + info.orientation);
+
+			result %= 360;
+			camera.setDisplayOrientation(result);
+		}
+
+		public void surfaceChanged(SurfaceHolder holder, int format, int width,
+				int height) {
+			camera.stopPreview();
+			setCameraDisplayOrientation();
+			try {
+				camera.setPreviewDisplay(holder);
+				Toast.makeText(TakeAndSavePhoto.this,
+						"Surface size is " + width + "w " + height + "h",
+						Toast.LENGTH_LONG).show();
+			} catch (Exception e) {
+				Toast.makeText(TakeAndSavePhoto.this, e.toString(),
+						Toast.LENGTH_LONG).show();
+			}
+			Camera.Parameters parameters = camera.getParameters();
+			List<Size> sizes = parameters.getSupportedPreviewSizes();
+
+			Size optimalSize = getOptimalPreviewSize(sizes, width, height);
+			parameters.setPreviewSize(optimalSize.width, optimalSize.height);
+			camera.setParameters(parameters);
+		//	camera.startPreview();//delete
+			initPreview(width, height);
+			startPreview();
+		}
+
+		public void surfaceDestroyed(SurfaceHolder holder) {
+
+		}
+	};
+
+	Camera.PictureCallback photoCallback = new Camera.PictureCallback() {
+		public void onPictureTaken(byte[] data, Camera camera) {
+			new SavePhotoTask().execute(data);
+			 camera.stopPreview();
+			}
+	};
+
+	class SavePhotoTask extends AsyncTask<byte[], String, String> {
+		@Override
+		protected String doInBackground(byte[]... data) {
+			photoData = null;
+			photoData = Arrays.copyOf(data[0], data[0].length);
+			return (null);
+		}
+	}
 }
