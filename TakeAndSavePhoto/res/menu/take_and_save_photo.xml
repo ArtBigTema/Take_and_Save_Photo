@@ -8,9 +8,9 @@
         android:orderInCategory="100"
         android:title="@string/save_photo"
         app:showAsAction="never"/>
-  <item android:title="@string/take_photo"
-       android:id="@+id/item_take_photo" 
-        android:showAsAction="ifRoom"></item>
-
-
+    <item
+        android:id="@+id/item_take_photo"
+        android:showAsAction="ifRoom"
+        android:title="@string/take_photo">
+    </item>
 </menu>
