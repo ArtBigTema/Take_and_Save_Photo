@@ -23,9 +23,9 @@ import android.widget.EditText;
 import android.widget.Toast;
 
 public class TakeAndSavePhoto extends Activity {
-	private SurfaceView preview = null;
-	private SurfaceHolder previewHolder = null;
-	private Camera camera = null;
+	private SurfaceView surfacePreviewPhoto = null;
+	private SurfaceHolder surfacePreviewHolder = null;
+	private Camera photoCamera = null;
 	private boolean inPreview = false;
 	private boolean cameraConfigured = false;
 	byte[] photoData;
@@ -34,25 +34,26 @@ public class TakeAndSavePhoto extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.a_take_and_save_photo);
-		preview = (SurfaceView) findViewById(R.id.surfaceView1);
-		previewHolder = preview.getHolder();
-		previewHolder.addCallback(surfaceCallback);
-		previewHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+		surfacePreviewPhoto = (SurfaceView) findViewById(R.id.surfaceView1);
+		surfacePreviewHolder = surfacePreviewPhoto.getHolder();
+		surfacePreviewHolder.addCallback(surfaceCallback);
+		surfacePreviewHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
 
 	}
 
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (camera == null) {
-			camera = Camera.open();
+		if (photoCamera == null) {
+			photoCamera = Camera.open();
 		}
 		inPreview = true;
 		startPreview();
 	}
+
 	private void startPreview() {
-		if (cameraConfigured && camera != null) {
-			camera.startPreview();
+		if (cameraConfigured && photoCamera != null) {
+			photoCamera.startPreview();
 			inPreview = true;
 		}
 	}
@@ -61,11 +62,11 @@ public class TakeAndSavePhoto extends Activity {
 	public void onPause() {
 		super.onPause();
 		if (inPreview) {
-			camera.stopPreview();
+			photoCamera.stopPreview();
 		}
-		camera.release();
-		camera = null;
-		inPreview = false;		
+		photoCamera.release();
+		photoCamera = null;
+		inPreview = false;
 	}
 
 	@Override
@@ -80,7 +81,7 @@ public class TakeAndSavePhoto extends Activity {
 
 		if (item.getItemId() == R.id.item_take_photo) {
 			if (inPreview) {
-				camera.takePicture(null, null, photoCallback);
+				photoCamera.takePicture(null, null, photoCallback);
 				inPreview = false;
 			}
 		}
@@ -150,32 +151,29 @@ public class TakeAndSavePhoto extends Activity {
 		return (result);
 	}
 
-
-
 	private void initPreview(int width, int height) {
-		if (camera != null && previewHolder.getSurface() != null) {
+		if (photoCamera != null && surfacePreviewHolder.getSurface() != null) {
 			try {
-				camera.setPreviewDisplay(previewHolder);
+				photoCamera.setPreviewDisplay(surfacePreviewHolder);
 			} catch (Throwable t) {
-							Toast.makeText(TakeAndSavePhoto.this, t.getMessage(),
+				Toast.makeText(TakeAndSavePhoto.this, t.getMessage(),
 						Toast.LENGTH_LONG).show();
 			}
 
 			if (!cameraConfigured) {
-				Camera.Parameters parameters = camera.getParameters();
+				Camera.Parameters parameters = photoCamera.getParameters();
 				Camera.Size size = getBestPreviewSize(width, height, parameters);
-				
+
 				if (size != null) {
 					parameters.setPreviewSize(size.width, size.height);
-					
+
 					parameters.setPictureFormat(ImageFormat.JPEG);
-					camera.setParameters(parameters);
+					photoCamera.setParameters(parameters);
 					cameraConfigured = true;
 				}
 			}
 		}
 	}
-
 
 	SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
 		public void surfaceCreated(SurfaceHolder holder) {
@@ -183,7 +181,7 @@ public class TakeAndSavePhoto extends Activity {
 		}
 
 		private Size getOptimalPreviewSize(List<Size> sizes, int w, int h) {
-			final double B_SIZE = 2;//1.2
+			final double B_SIZE = 2;// 1.2
 			double targetRatio = (double) w / h;
 			if (sizes == null)
 				return null;
@@ -243,15 +241,17 @@ public class TakeAndSavePhoto extends Activity {
 			result = ((360 - degrees) + info.orientation);
 
 			result %= 360;
-			camera.setDisplayOrientation(result);
+			photoCamera.setDisplayOrientation(result);
 		}
 
 		public void surfaceChanged(SurfaceHolder holder, int format, int width,
 				int height) {
-			camera.stopPreview();
+			if (inPreview) {
+			photoCamera.stopPreview();	
+			}
 			setCameraDisplayOrientation();
 			try {
-				camera.setPreviewDisplay(holder);
+				photoCamera.setPreviewDisplay(holder);
 				Toast.makeText(TakeAndSavePhoto.this,
 						"Surface size is " + width + "w " + height + "h",
 						Toast.LENGTH_LONG).show();
@@ -259,15 +259,17 @@ public class TakeAndSavePhoto extends Activity {
 				Toast.makeText(TakeAndSavePhoto.this, e.toString(),
 						Toast.LENGTH_LONG).show();
 			}
-			Camera.Parameters parameters = camera.getParameters();
+			Camera.Parameters parameters = photoCamera.getParameters();
 			List<Size> sizes = parameters.getSupportedPreviewSizes();
 
 			Size optimalSize = getOptimalPreviewSize(sizes, width, height);
 			parameters.setPreviewSize(optimalSize.width, optimalSize.height);
-			camera.setParameters(parameters);
-		//	camera.startPreview();//delete
+			photoCamera.setParameters(parameters);
+			// camera.startPreview();//delete
 			initPreview(width, height);
-			startPreview();
+			if (inPreview) {
+				startPreview();
+				}
 		}
 
 		public void surfaceDestroyed(SurfaceHolder holder) {
@@ -278,8 +280,8 @@ public class TakeAndSavePhoto extends Activity {
 	Camera.PictureCallback photoCallback = new Camera.PictureCallback() {
 		public void onPictureTaken(byte[] data, Camera camera) {
 			new SavePhotoTask().execute(data);
-			 camera.stopPreview();
-			}
+			camera.stopPreview();
+		}
 	};
 
 	class SavePhotoTask extends AsyncTask<byte[], String, String> {
